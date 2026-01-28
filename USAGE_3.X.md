@@ -33,6 +33,33 @@ const result: BTCardTokenizationNonceResult | BTPayPalError = await tokenizeCard
 
 ```
 
+## 3D Secure card verification
+```javascript
+import {
+  requestThreeDSecureVerification,
+  BoolValue,
+} from "expo-braintree";
+
+const threeDSecureResult = await requestThreeDSecureVerification({
+  clientToken: 'Token',
+  nonce: 'card-nonce-from-tokenize',
+  amount: '10.00',
+  email: 'customer@example.com',
+  challengeRequested: BoolValue.true,
+  billingAddress: {
+    givenName: 'Jill',
+    surname: 'Doe',
+    phoneNumber: '5551234567',
+    streetAddress: '555 Smith St',
+    extendedAddress: '#5',
+    locality: 'Oakland',
+    region: 'CA',
+    postalCode: '12345',
+    countryCodeAlpha2: 'US',
+  },
+});
+```
+
 ## Request PayPal billing agreement
 ```javascript
 import {

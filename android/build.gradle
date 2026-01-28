@@ -80,6 +80,13 @@ android {
 repositories {
   mavenCentral()
   google()
+  maven {
+    url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
+    credentials {
+      username "braintree_team_sdk"
+      password "AKCp8jQcoDy2hxSWhDAUQKXLDPDx6NYRkqrgFLRc3qDrayg6rrCbJpsKKyMwaykVL8FWusJpp"
+    }
+  }
 }
 
 def kotlin_version = getExtOrDefault("kotlinVersion")
@@ -95,5 +102,5 @@ dependencies {
   implementation 'com.braintreepayments.api:paypal:5.19.0'
   implementation 'com.braintreepayments.api:card:5.19.0'
   implementation 'com.braintreepayments.api:venmo:5.19.0'
+  implementation 'com.braintreepayments.api:three-d-secure:5.19.0'
 }
-

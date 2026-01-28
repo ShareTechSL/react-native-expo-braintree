@@ -14,6 +14,10 @@ RCT_EXTERN_METHOD(tokenizeCardData:(NSDictionary*)options
                  withResolver:(RCTPromiseResolveBlock)resolve
                  withRejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(requestThreeDSecureVerification:(NSDictionary*)options
+                 withResolver:(RCTPromiseResolveBlock)resolve
+                 withRejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(getDeviceDataFromDataCollector:(NSDictionary*)options
                  withResolver:(RCTPromiseResolveBlock)resolve
                  withRejecter:(RCTPromiseRejectBlock)reject)
@@ -28,4 +32,3 @@ RCT_EXTERN_METHOD(requestVenmoNonce:(NSDictionary*)options
 }
 
 @end
-

@@ -6,10 +6,13 @@ import type {
   BTPayPalGetDeviceDataResult,
   BTVenmoError,
   BTVenmoNonceResult,
+  BTThreeDSecureError,
+  BTThreeDSecureResult,
   RequestBillingAgreementOptions,
   RequestOneTimePaymentOptions,
   RequestVenmoNonceOptions,
   TokenizeCardOptions,
+  ThreeDSecureVerificationOptions,
 } from './types';
 
 const LINKING_ERROR =
@@ -80,6 +83,18 @@ export async function tokenizeCardData(
     return result;
   } catch (ex: unknown) {
     return ex as BTPayPalError;
+  }
+}
+
+export async function requestThreeDSecureVerification(
+  options: ThreeDSecureVerificationOptions
+): Promise<BTThreeDSecureResult | BTThreeDSecureError> {
+  try {
+    const result: BTThreeDSecureResult =
+      await ExpoBraintree.requestThreeDSecureVerification(options);
+    return result;
+  } catch (ex: unknown) {
+    return ex as BTThreeDSecureError;
   }
 }
 

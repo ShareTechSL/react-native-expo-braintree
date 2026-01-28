@@ -106,5 +106,5 @@ You can find it in [Example App](example/src/App.tsx) or in dedicated, usage pag
 
 - [ ] Add ApplePay,
 - [ ] Google Pay,
-- [ ] 3D-Secure (In Progress)
+- [x] 3D-Secure
 - [x] Venmo

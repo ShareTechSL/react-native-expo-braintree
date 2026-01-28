@@ -1,0 +1,1383 @@
+diff --git a/README.md b/README.md
+index 9ada140..47931ef 100644
+--- a/README.md
++++ b/README.md
+@@ -106,5 +106,5 @@ You can find it in [Example App](example/src/App.tsx) or in dedicated, usage pag
+ 
+ - [ ] Add ApplePay,
+ - [ ] Google Pay,
+-- [ ] 3D-Secure (In Progress)
++- [x] 3D-Secure
+ - [x] Venmo
+diff --git a/USAGE_3.X.md b/USAGE_3.X.md
+index 0df8290..110e02c 100644
+--- a/USAGE_3.X.md
++++ b/USAGE_3.X.md
+@@ -33,6 +33,33 @@ const result: BTCardTokenizationNonceResult | BTPayPalError = await tokenizeCard
+ 
+ ```
+ 
++## 3D Secure card verification
++```javascript
++import {
++  requestThreeDSecureVerification,
++  BoolValue,
++} from "expo-braintree";
++
++const threeDSecureResult = await requestThreeDSecureVerification({
++  clientToken: 'Token',
++  nonce: 'card-nonce-from-tokenize',
++  amount: '10.00',
++  email: 'customer@example.com',
++  challengeRequested: BoolValue.true,
++  billingAddress: {
++    givenName: 'Jill',
++    surname: 'Doe',
++    phoneNumber: '5551234567',
++    streetAddress: '555 Smith St',
++    extendedAddress: '#5',
++    locality: 'Oakland',
++    region: 'CA',
++    postalCode: '12345',
++    countryCodeAlpha2: 'US',
++  },
++});
++```
++
+ ## Request PayPal billing agreement
+ ```javascript
+ import {
+@@ -66,4 +93,4 @@ const nonce = await requestVenmoNonce({
+     paymentMethodUsage: BTVenmoPaymntMethodUsage.multiUse,
+     totalAmount: '5',
+ });
+-```
+\ No newline at end of file
++```
+diff --git a/android/build.gradle b/android/build.gradle
+index 57efd40..104d1eb 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -80,6 +80,13 @@ android {
+ repositories {
+   mavenCentral()
+   google()
++  maven {
++    url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
++    credentials {
++      username "braintree_team_sdk"
++      password "AKCp8jQcoDy2hxSWhDAUQKXLDPDx6NYRkqrgFLRc3qDrayg6rrCbJpsKKyMwaykVL8FWusJpp"
++    }
++  }
+ }
+ 
+ def kotlin_version = getExtOrDefault("kotlinVersion")
+@@ -95,5 +102,5 @@ dependencies {
+   implementation 'com.braintreepayments.api:paypal:5.19.0'
+   implementation 'com.braintreepayments.api:card:5.19.0'
+   implementation 'com.braintreepayments.api:venmo:5.19.0'
++  implementation 'com.braintreepayments.api:three-d-secure:5.19.0'
+ }
+-
+diff --git a/android/src/main/java/com/expobraintree/BrainTreeEnums.kt b/android/src/main/java/com/expobraintree/BrainTreeEnums.kt
+index a0d9d9c..27b3bf3 100644
+--- a/android/src/main/java/com/expobraintree/BrainTreeEnums.kt
++++ b/android/src/main/java/com/expobraintree/BrainTreeEnums.kt
+@@ -4,6 +4,7 @@ enum class EXCEPTION_TYPES(val value: String) {
+   KOTLIN_EXCEPTION("ExpoBraintree:`KotlinException"),
+   USER_CANCEL_EXCEPTION("ExpoBraintree:`UserCancelException"),
+   TOKENIZE_EXCEPTION("ExpoBraintree:`TokenizeException"),
++  THREE_D_SECURE_EXCEPTION("ExpoBraintree:`ThreeDSecureException"),
+ }
+ 
+ enum class PAYPAL_EXCEPTION_TYPES(val value: String) {
+@@ -19,7 +20,8 @@ enum class ERROR_TYPES(val value: String) {
+   TOKENIZE_VAULT_PAYMENT_ERROR("TOKENIZE_VAULT_PAYMENT_ERROR"),
+   USER_CANCEL_TRANSACTION_ERROR("USER_CANCEL_TRANSACTION_ERROR"),
+   DATA_COLLECTOR_ERROR("DATA_COLLECTOR_ERROR"),
+-  CARD_TOKENIZATION_ERROR("CARD_TOKENIZATION_ERROR")
++  CARD_TOKENIZATION_ERROR("CARD_TOKENIZATION_ERROR"),
++  THREE_D_SECURE_VERIFICATION_ERROR("THREE_D_SECURE_VERIFICATION_ERROR"),
+ }
+ 
+ enum class PAYPAL_ERROR_TYPES(val value: String) {
+@@ -28,4 +30,4 @@ enum class PAYPAL_ERROR_TYPES(val value: String) {
+ 
+ enum class VENMO_ERROR_TYPES(val value: String) {
+   VENMO_DISABLED_IN_CONFIGURATION("VENMO_DISABLED_IN_CONFIGURATION_ERROR")
+-}
+\ No newline at end of file
++}
+diff --git a/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt b/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt
+index 314ef38..648255f 100644
+--- a/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt
++++ b/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt
+@@ -20,6 +20,11 @@ import com.braintreepayments.api.paypal.PayPalPaymentAuthResult
+ import com.braintreepayments.api.paypal.PayPalPendingRequest
+ import com.braintreepayments.api.paypal.PayPalResult
+ import com.braintreepayments.api.paypal.PayPalVaultRequest
++import com.braintreepayments.api.threedsecure.ThreeDSecureClient
++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthRequest
++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthResult
++import com.braintreepayments.api.threedsecure.ThreeDSecureRequest
++import com.braintreepayments.api.threedsecure.ThreeDSecureResult
+ import com.braintreepayments.api.venmo.VenmoAccountNonce
+ import com.braintreepayments.api.venmo.VenmoClient
+ import com.braintreepayments.api.venmo.VenmoLauncher
+@@ -46,6 +51,8 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
+   private var reactContextRef: Context
+   private lateinit var payPalClientRef: PayPalClient
+   private lateinit var venmoClientRef: VenmoClient
++  private lateinit var threeDSecureClientRef: ThreeDSecureClient
++  private val threeDSecureFragmentTag = "ExpoBraintreeThreeDSecureFragment"
+ 
+   init {
+     this.reactContextRef = reactContext
+@@ -245,6 +252,54 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
+     }
+   }
+ 
++  @ReactMethod
++  fun requestThreeDSecureVerification(data: ReadableMap, localPromise: Promise) {
++    try {
++      promiseRef = localPromise
++      currentActivityRef = getCurrentActivity() as FragmentActivity
++
++      val clientToken = data.getString("clientToken") ?: ""
++      if (this::currentActivityRef.isInitialized && clientToken.isNotEmpty()) {
++        threeDSecureClientRef = ThreeDSecureClient(currentActivityRef, clientToken)
++        val threeDSecureRequest: ThreeDSecureRequest =
++          ThreeDSecureDataConverter.createThreeDSecureRequest(data)
++
++        threeDSecureClientRef.createPaymentAuthRequest(
++          currentActivityRef,
++          threeDSecureRequest
++        ) { paymentAuthRequest ->
++          when (paymentAuthRequest) {
++            is ThreeDSecurePaymentAuthRequest.ReadyToLaunch -> {
++              currentActivityRef.runOnUiThread {
++                val fragment = getThreeDSecureFragment()
++                fragment.setCallback { paymentAuthResult ->
++                  handleThreeDSecurePaymentAuthResult(paymentAuthResult, fragment)
++                }
++                fragment.launch(paymentAuthRequest)
++              }
++            }
++
++            is ThreeDSecurePaymentAuthRequest.LaunchNotRequired -> {
++              moduleHandlers.onThreeDSecureSuccessHandler(paymentAuthRequest.nonce, promiseRef)
++            }
++
++            is ThreeDSecurePaymentAuthRequest.Failure -> {
++              moduleHandlers.onThreeDSecureFailure(paymentAuthRequest.error, promiseRef)
++            }
++          }
++        }
++      } else {
++        throw Exception("Not Initialized")
++      }
++    } catch (ex: Exception) {
++      localPromise.reject(
++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value,
++        ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.value,
++        SharedDataConverter.createError(EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value, ex.message)
++      )
++    }
++  }
++
+   @ReactMethod
+   fun requestVenmoNonce(data: ReadableMap, localPromise: Promise) {
+     try {
+@@ -322,6 +377,39 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
+     }
+   }
+ 
++  private fun handleThreeDSecurePaymentAuthResult(
++    paymentAuthResult: ThreeDSecurePaymentAuthResult,
++    fragment: ThreeDSecureFragment
++  ) {
++    when (paymentAuthResult) {
++      is ThreeDSecurePaymentAuthResult.Failure -> {
++        moduleHandlers.onThreeDSecureFailure(paymentAuthResult.error, promiseRef)
++        fragment.clearCallback()
++      }
++
++      ThreeDSecurePaymentAuthResult.NoResult -> {
++        moduleHandlers.onCancel(Exception("No result"), promiseRef)
++        fragment.clearCallback()
++      }
++
++      is ThreeDSecurePaymentAuthResult.Success -> {
++        threeDSecureClientRef.tokenize(paymentAuthResult) { threeDSecureResult ->
++          when (threeDSecureResult) {
++            is ThreeDSecureResult.Success ->
++              moduleHandlers.onThreeDSecureSuccessHandler(threeDSecureResult.nonce, promiseRef)
++
++            is ThreeDSecureResult.Failure ->
++              moduleHandlers.onThreeDSecureFailure(threeDSecureResult.error, promiseRef)
++
++            ThreeDSecureResult.Cancel ->
++              moduleHandlers.onCancel(Exception("Cancel"), promiseRef)
++          }
++          fragment.clearCallback()
++        }
++      }
++    }
++  }
++
+   private fun getPayPalPendingRequest(): PayPalPendingRequest.Started? {
+     currentActivityRef = getCurrentActivity() as FragmentActivity
+     return PendingRequestStore.getInstance().getPayPalPendingRequest(currentActivityRef)
+@@ -342,6 +430,19 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
+     PendingRequestStore.getInstance().clearVenmoPendingRequest(currentActivityRef)
+   }
+ 
++  private fun getThreeDSecureFragment(): ThreeDSecureFragment {
++    val fragmentManager = currentActivityRef.supportFragmentManager
++    val existingFragment =
++      fragmentManager.findFragmentByTag(threeDSecureFragmentTag) as? ThreeDSecureFragment
++    if (existingFragment != null) {
++      return existingFragment
++    }
++
++    val fragment = ThreeDSecureFragment()
++    fragmentManager.beginTransaction().add(fragment, threeDSecureFragmentTag).commitNow()
++    return fragment
++  }
++
+   private fun handleReturnToApp(intent: Intent) {
+     // fetch stored pending requests
+     val payPalPendingRequest: PayPalPendingRequest.Started? = getPayPalPendingRequest()
+diff --git a/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt b/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt
+index 12fdf91..1c86c57 100644
+--- a/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt
++++ b/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt
+@@ -2,6 +2,7 @@ package com.expobraintree
+ 
+ import com.braintreepayments.api.card.CardNonce
+ import com.braintreepayments.api.core.UserCanceledException
++import com.braintreepayments.api.core.PaymentMethodNonce
+ import com.braintreepayments.api.paypal.PayPalAccountNonce
+ import com.braintreepayments.api.venmo.VenmoAccountNonce
+ 
+@@ -85,4 +86,26 @@ class ExpoBraintreeModuleHandlers {
+     val result: WritableMap = PaypalDataConverter.createTokenizeCardDataNonce(cardNonce)
+     mPromise.resolve(result)
+   }
++
++  fun onThreeDSecureSuccessHandler(nonce: PaymentMethodNonce, mPromise: Promise) {
++    val result: WritableMap = ThreeDSecureDataConverter.createThreeDSecureResult(nonce)
++    mPromise.resolve(result)
++  }
++
++  fun onThreeDSecureFailure(error: Exception, mPromise: Promise) {
++    if (error is UserCanceledException) {
++      mPromise.reject(EXCEPTION_TYPES.USER_CANCEL_EXCEPTION.value,
++        ERROR_TYPES.USER_CANCEL_TRANSACTION_ERROR.value,
++        SharedDataConverter.createError(
++          EXCEPTION_TYPES.USER_CANCEL_EXCEPTION.value, error.message
++        ))
++      return
++    }
++
++    mPromise.reject(EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value,
++      ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.value,
++      SharedDataConverter.createError(
++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value, error.message
++      ))
++  }
+ }
+diff --git a/ios/ExpoBraintree.mm b/ios/ExpoBraintree.mm
+index 6d0e5bc..06f469d 100644
+--- a/ios/ExpoBraintree.mm
++++ b/ios/ExpoBraintree.mm
+@@ -14,6 +14,10 @@ RCT_EXTERN_METHOD(tokenizeCardData:(NSDictionary*)options
+                  withResolver:(RCTPromiseResolveBlock)resolve
+                  withRejecter:(RCTPromiseRejectBlock)reject)
+ 
++RCT_EXTERN_METHOD(requestThreeDSecureVerification:(NSDictionary*)options
++                 withResolver:(RCTPromiseResolveBlock)resolve
++                 withRejecter:(RCTPromiseRejectBlock)reject)
++
+ RCT_EXTERN_METHOD(getDeviceDataFromDataCollector:(NSDictionary*)options
+                  withResolver:(RCTPromiseResolveBlock)resolve
+                  withRejecter:(RCTPromiseRejectBlock)reject)
+@@ -28,4 +32,3 @@ RCT_EXTERN_METHOD(requestVenmoNonce:(NSDictionary*)options
+ }
+ 
+ @end
+-
+diff --git a/ios/ExpoBraintree.swift b/ios/ExpoBraintree.swift
+index 232dbe2..64fb65f 100644
+--- a/ios/ExpoBraintree.swift
++++ b/ios/ExpoBraintree.swift
+@@ -13,6 +13,7 @@ enum EXCEPTION_TYPES: String {
+   case SWIFT_EXCEPTION = "ReactNativeExpoBraintree:`SwiftException"
+   case USER_CANCEL_EXCEPTION = "ReactNativeExpoBraintree:`UserCancelException"
+   case TOKENIZE_EXCEPTION = "ReactNativeExpoBraintree:`TokenizeException"
++  case THREE_D_SECURE_EXCEPTION = "ReactNativeExpoBraintree:`ThreeDSecureException"
+   case PAYPAL_DISABLED_IN_CONFIGURATION =
+     "ReactNativeExpoBraintree:`Paypal disabled in configuration"
+   case VENMO_DISABLED_IN_CONFIGURATION =
+@@ -27,10 +28,11 @@ enum ERROR_TYPES: String {
+   case VENMO_DISABLED_IN_CONFIGURATION_ERROR = "VENMO_DISABLED_IN_CONFIGURATION_ERROR"
+   case DATA_COLLECTOR_ERROR = "DATA_COLLECTOR_ERROR"
+   case CARD_TOKENIZATION_ERROR = "CARD_TOKENIZATION_ERROR"
++  case THREE_D_SECURE_VERIFICATION_ERROR = "THREE_D_SECURE_VERIFICATION_ERROR"
+ }
+ 
+ @objc(ExpoBraintree)
+-class ExpoBraintree: NSObject {
++class ExpoBraintree: NSObject, BTThreeDSecureRequestDelegate {
+ 
+   @objc(requestBillingAgreement:withResolver:withRejecter:)
+   func requestBillingAgreement(
+@@ -218,6 +220,44 @@ class ExpoBraintree: NSObject {
+     }
+   }
+ 
++  @objc(requestThreeDSecureVerification:withResolver:withRejecter:)
++  func requestThreeDSecureVerification(
++    options: [String: Any], resolve: @escaping RCTPromiseResolveBlock,
++    reject: @escaping RCTPromiseRejectBlock
++  ) {
++    let clientToken = options["clientToken"] as? String ?? ""
++    let apiClientOptional = BTAPIClient(authorization: clientToken)
++    guard let apiClient = apiClientOptional else {
++      return reject(
++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.rawValue,
++        ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.rawValue,
++        NSError(domain: ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.rawValue, code: -1))
++    }
++
++    let threeDSecureClient = BTThreeDSecureClient(apiClient: apiClient)
++    let threeDSecureRequest = prepareBTThreeDSecureRequest(options: options)
++    threeDSecureRequest.threeDSecureRequestDelegate = self
++
++    threeDSecureClient.startPaymentFlow(threeDSecureRequest) { result, error in
++      if let error = error {
++        return reject(
++          EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.rawValue,
++          ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.rawValue,
++          NSError(domain: error.localizedDescription, code: -1)
++        )
++      }
++      if let result = result {
++        return resolve(prepareBTThreeDSecureResult(result: result))
++      }
++
++      return reject(
++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.rawValue,
++        ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.rawValue,
++        NSError(domain: ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.rawValue, code: -1)
++      )
++    }
++  }
++
+   @objc(requestVenmoNonce:withResolver:withRejecter:)
+   func requestVenmoNonce(
+     options: [String: String], resolve: @escaping RCTPromiseResolveBlock,
+@@ -280,4 +320,12 @@ class ExpoBraintree: NSObject {
+     }
+   }
+ 
++  func onLookupComplete(
++    _ request: BTThreeDSecureRequest,
++    result: BTThreeDSecureResult,
++    next: @escaping () -> Void
++  ) {
++    next()
++  }
++
+ }
+diff --git a/react-native-expo-braintree.podspec b/react-native-expo-braintree.podspec
+index 9eeae94..3194cf8 100644
+--- a/react-native-expo-braintree.podspec
++++ b/react-native-expo-braintree.podspec
+@@ -17,6 +17,7 @@ Pod::Spec.new do |s|
+   s.source_files = "ios/**/*.{h,m,mm,swift}"
+   s.dependency "Braintree", "6.41.0"
+   s.dependency "Braintree/Venmo", "6.41.0"
++  s.dependency "Braintree/ThreeDSecure", "6.41.0"
+ 
+   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.
+   # See https://github.com/facebook/react-native/blob/febf6b7f33fdb4904669f99d795eba4c0f95d7bf/scripts/cocoapods/new_architecture.rb#L79.
+diff --git a/src/index.tsx b/src/index.tsx
+index 4504743..a559259 100644
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -6,10 +6,13 @@ import type {
+   BTPayPalGetDeviceDataResult,
+   BTVenmoError,
+   BTVenmoNonceResult,
++  BTThreeDSecureError,
++  BTThreeDSecureResult,
+   RequestBillingAgreementOptions,
+   RequestOneTimePaymentOptions,
+   RequestVenmoNonceOptions,
+   TokenizeCardOptions,
++  ThreeDSecureVerificationOptions,
+ } from './types';
+ 
+ const LINKING_ERROR =
+@@ -83,6 +86,18 @@ export async function tokenizeCardData(
+   }
+ }
+ 
++export async function requestThreeDSecureVerification(
++  options: ThreeDSecureVerificationOptions
++): Promise<BTThreeDSecureResult | BTThreeDSecureError> {
++  try {
++    const result: BTThreeDSecureResult =
++      await ExpoBraintree.requestThreeDSecureVerification(options);
++    return result;
++  } catch (ex: unknown) {
++    return ex as BTThreeDSecureError;
++  }
++}
++
+ export async function requestVenmoNonce(
+   options: RequestVenmoNonceOptions
+ ): Promise<BTVenmoNonceResult | BTVenmoError> {
+diff --git a/src/types.ts b/src/types.ts
+index 5f39c23..8a3aa1b 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -2,6 +2,7 @@ export enum EXCEPTION_TYPES {
+   SWIFT_EXCEPTION = 'ExpoBraintree:`SwiftException',
+   USER_CANCEL_EXCEPTION = 'ExpoBraintree:`UserCancelException',
+   TOKENIZE_EXCEPTION = 'ExpoBraintree:`TokenizeException',
++  THREE_D_SECURE_EXCEPTION = 'ExpoBraintree:`ThreeDSecureException',
+ }
+ 
+ export enum PAYPAL_EXCEPTION_TYPES {
+@@ -18,6 +19,7 @@ export enum ERROR_TYPES {
+   USER_CANCEL_TRANSACTION_ERROR = 'USER_CANCEL_TRANSACTION_ERROR',
+   DATA_COLLECTOR_ERROR = 'DATA_COLLECTOR_ERROR',
+   CARD_TOKENIZATION_ERROR = 'CARD_TOKENIZATION_ERROR',
++  THREE_D_SECURE_VERIFICATION_ERROR = 'THREE_D_SECURE_VERIFICATION_ERROR',
+ }
+ 
+ export enum PAYPAL_ERROR_TYPES {
+@@ -84,6 +86,29 @@ export type TokenizeCardOptions = {
+   clientToken: string;
+ };
+ 
++export type ThreeDSecurePostalAddress = {
++  givenName?: string;
++  surname?: string;
++  phoneNumber?: string;
++  streetAddress?: string;
++  extendedAddress?: string;
++  locality?: string;
++  region?: string;
++  postalCode?: string;
++  countryCodeAlpha2?: string;
++};
++
++export type ThreeDSecureVerificationOptions = {
++  clientToken: string;
++  nonce: string;
++  amount: string;
++  email?: string;
++  mobilePhoneNumber?: string;
++  challengeRequested?: BoolValue;
++  billingAddress?: ThreeDSecurePostalAddress;
++  shippingAddress?: ThreeDSecurePostalAddress;
++};
++
+ export type BTPayPalAccountNonceAddressResult = {
+   recipientName?: string;
+   streetAddress?: string;
+@@ -113,6 +138,18 @@ export type BTCardTokenizationNonceResult = {
+   expirationYear?: string;
+ };
+ 
++export type BTThreeDSecureResult = {
++  nonce: string;
++  liabilityShifted?: boolean;
++  liabilityShiftPossible?: boolean;
++  status?: string;
++  cardNetwork?: string;
++  lastTwo?: string;
++  lastFour?: string;
++  expirationMonth?: string;
++  expirationYear?: string;
++};
++
+ export type RequestVenmoNonceOptions = {
+   clientToken: string;
+   profileID?: string;
+@@ -156,3 +193,9 @@ export type BTVenmoError = {
+   message?: ERROR_TYPES | VENMO_ERROR_TYPES | string;
+   domain?: ERROR_TYPES | VENMO_ERROR_TYPES;
+ };
++
++export type BTThreeDSecureError = {
++  code?: EXCEPTION_TYPES;
++  message?: ERROR_TYPES | string;
++  domain?: ERROR_TYPES;
++};
+diff --git a/android/src/main/java/com/expobraintree/ThreeDSecureDataConverter.kt b/android/src/main/java/com/expobraintree/ThreeDSecureDataConverter.kt
+new file mode 100644
+index 0000000..124613a
+--- /dev/null
++++ b/android/src/main/java/com/expobraintree/ThreeDSecureDataConverter.kt
+@@ -0,0 +1,94 @@
++package com.expobraintree
++
++import com.braintreepayments.api.card.CardNonce
++import com.braintreepayments.api.core.PaymentMethodNonce
++import com.braintreepayments.api.threedsecure.ThreeDSecureAdditionalInformation
++import com.braintreepayments.api.threedsecure.ThreeDSecurePostalAddress
++import com.braintreepayments.api.threedsecure.ThreeDSecureRequest
++import com.facebook.react.bridge.Arguments
++import com.facebook.react.bridge.ReadableMap
++import com.facebook.react.bridge.WritableMap
++
++class ThreeDSecureDataConverter {
++  companion object {
++    fun createThreeDSecureRequest(options: ReadableMap): ThreeDSecureRequest {
++      val request = ThreeDSecureRequest()
++      request.amount = options.getString("amount") ?: ""
++      request.nonce = options.getString("nonce") ?: ""
++
++      if (options.hasKey("email")) request.email = options.getString("email")
++      if (options.hasKey("mobilePhoneNumber")) {
++        request.mobilePhoneNumber = options.getString("mobilePhoneNumber")
++      }
++
++      if (options.hasKey("challengeRequested")) {
++        val challengeRequested: String = options.getString("challengeRequested") ?: ""
++        when (challengeRequested) {
++          "true" -> request.challengeRequested = true
++          "false" -> request.challengeRequested = false
++        }
++      }
++
++      if (options.hasKey("billingAddress")) {
++        val billingAddress = options.getMap("billingAddress")
++        if (billingAddress != null) {
++          request.billingAddress = createThreeDSecurePostalAddress(billingAddress)
++        }
++      }
++
++      if (options.hasKey("shippingAddress")) {
++        val shippingAddress = options.getMap("shippingAddress")
++        if (shippingAddress != null) {
++          val additionalInfo =
++            request.additionalInformation ?: ThreeDSecureAdditionalInformation()
++          additionalInfo.shippingAddress = createThreeDSecurePostalAddress(shippingAddress)
++          request.additionalInformation = additionalInfo
++        }
++      }
++
++      return request
++    }
++
++    private fun createThreeDSecurePostalAddress(address: ReadableMap): ThreeDSecurePostalAddress {
++      val result = ThreeDSecurePostalAddress()
++      if (address.hasKey("givenName")) result.givenName = address.getString("givenName")
++      if (address.hasKey("surname")) result.surname = address.getString("surname")
++      if (address.hasKey("phoneNumber")) result.phoneNumber = address.getString("phoneNumber")
++      if (address.hasKey("streetAddress")) result.streetAddress = address.getString("streetAddress")
++      if (address.hasKey("extendedAddress")) result.extendedAddress = address.getString("extendedAddress")
++      if (address.hasKey("locality")) result.locality = address.getString("locality")
++      if (address.hasKey("region")) result.region = address.getString("region")
++      if (address.hasKey("postalCode")) result.postalCode = address.getString("postalCode")
++      if (address.hasKey("countryCodeAlpha2")) {
++        result.countryCodeAlpha2 = address.getString("countryCodeAlpha2")
++      }
++      return result
++    }
++
++    fun createThreeDSecureResult(nonce: PaymentMethodNonce): WritableMap {
++      val result: WritableMap = Arguments.createMap()
++      result.putString("nonce", nonce.string)
++
++      if (nonce is CardNonce) {
++        if (nonce.cardType == "Unknown") {
++          result.putString("cardNetwork", "")
++        } else {
++          result.putString("cardNetwork", nonce.cardType)
++        }
++        result.putString("lastFour", nonce.lastFour)
++        result.putString("lastTwo", nonce.lastTwo)
++        result.putString("expirationMonth", nonce.expirationMonth)
++        result.putString("expirationYear", nonce.expirationYear)
++
++        val threeDSecureInfo = nonce.threeDSecureInfo
++        if (threeDSecureInfo != null) {
++          result.putBoolean("liabilityShifted", threeDSecureInfo.liabilityShifted)
++          result.putBoolean("liabilityShiftPossible", threeDSecureInfo.liabilityShiftPossible)
++          result.putString("status", threeDSecureInfo.status.toString())
++        }
++      }
++
++      return result
++    }
++  }
++}
+diff --git a/android/src/main/java/com/expobraintree/ThreeDSecureFragment.kt b/android/src/main/java/com/expobraintree/ThreeDSecureFragment.kt
+new file mode 100644
+index 0000000..5d09f40
+--- /dev/null
++++ b/android/src/main/java/com/expobraintree/ThreeDSecureFragment.kt
+@@ -0,0 +1,25 @@
++package com.expobraintree
++
++import androidx.fragment.app.Fragment
++import com.braintreepayments.api.threedsecure.ThreeDSecureLauncher
++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthRequest
++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthResult
++
++class ThreeDSecureFragment : Fragment() {
++  private var callback: ((ThreeDSecurePaymentAuthResult) -> Unit)? = null
++  private val launcher = ThreeDSecureLauncher(this) { paymentAuthResult ->
++    callback?.invoke(paymentAuthResult)
++  }
++
++  fun setCallback(callback: (ThreeDSecurePaymentAuthResult) -> Unit) {
++    this.callback = callback
++  }
++
++  fun clearCallback() {
++    callback = null
++  }
++
++  fun launch(request: ThreeDSecurePaymentAuthRequest.ReadyToLaunch) {
++    launcher.launch(request)
++  }
++}
+diff --git a/current-changes.patch b/current-changes.patch
+new file mode 100644
+index 0000000..6a4bafb
+--- /dev/null
++++ b/current-changes.patch
+@@ -0,0 +1,651 @@
++diff --git a/README.md b/README.md
++index 9ada140..47931ef 100644
++--- a/README.md
+++++ b/README.md
++@@ -106,5 +106,5 @@ You can find it in [Example App](example/src/App.tsx) or in dedicated, usage pag
++ 
++ - [ ] Add ApplePay,
++ - [ ] Google Pay,
++-- [ ] 3D-Secure (In Progress)
+++- [x] 3D-Secure
++ - [x] Venmo
++diff --git a/USAGE_3.X.md b/USAGE_3.X.md
++index 0df8290..110e02c 100644
++--- a/USAGE_3.X.md
+++++ b/USAGE_3.X.md
++@@ -33,6 +33,33 @@ const result: BTCardTokenizationNonceResult | BTPayPalError = await tokenizeCard
++ 
++ ```
++ 
+++## 3D Secure card verification
+++```javascript
+++import {
+++  requestThreeDSecureVerification,
+++  BoolValue,
+++} from "expo-braintree";
+++
+++const threeDSecureResult = await requestThreeDSecureVerification({
+++  clientToken: 'Token',
+++  nonce: 'card-nonce-from-tokenize',
+++  amount: '10.00',
+++  email: 'customer@example.com',
+++  challengeRequested: BoolValue.true,
+++  billingAddress: {
+++    givenName: 'Jill',
+++    surname: 'Doe',
+++    phoneNumber: '5551234567',
+++    streetAddress: '555 Smith St',
+++    extendedAddress: '#5',
+++    locality: 'Oakland',
+++    region: 'CA',
+++    postalCode: '12345',
+++    countryCodeAlpha2: 'US',
+++  },
+++});
+++```
+++
++ ## Request PayPal billing agreement
++ ```javascript
++ import {
++@@ -66,4 +93,4 @@ const nonce = await requestVenmoNonce({
++     paymentMethodUsage: BTVenmoPaymntMethodUsage.multiUse,
++     totalAmount: '5',
++ });
++-```
++\ No newline at end of file
+++```
++diff --git a/android/build.gradle b/android/build.gradle
++index 57efd40..104d1eb 100644
++--- a/android/build.gradle
+++++ b/android/build.gradle
++@@ -80,6 +80,13 @@ android {
++ repositories {
++   mavenCentral()
++   google()
+++  maven {
+++    url "https://cardinalcommerceprod.jfrog.io/artifactory/android"
+++    credentials {
+++      username "braintree_team_sdk"
+++      password "AKCp8jQcoDy2hxSWhDAUQKXLDPDx6NYRkqrgFLRc3qDrayg6rrCbJpsKKyMwaykVL8FWusJpp"
+++    }
+++  }
++ }
++ 
++ def kotlin_version = getExtOrDefault("kotlinVersion")
++@@ -95,5 +102,5 @@ dependencies {
++   implementation 'com.braintreepayments.api:paypal:5.19.0'
++   implementation 'com.braintreepayments.api:card:5.19.0'
++   implementation 'com.braintreepayments.api:venmo:5.19.0'
+++  implementation 'com.braintreepayments.api:three-d-secure:5.19.0'
++ }
++-
++diff --git a/android/src/main/java/com/expobraintree/BrainTreeEnums.kt b/android/src/main/java/com/expobraintree/BrainTreeEnums.kt
++index a0d9d9c..27b3bf3 100644
++--- a/android/src/main/java/com/expobraintree/BrainTreeEnums.kt
+++++ b/android/src/main/java/com/expobraintree/BrainTreeEnums.kt
++@@ -4,6 +4,7 @@ enum class EXCEPTION_TYPES(val value: String) {
++   KOTLIN_EXCEPTION("ExpoBraintree:`KotlinException"),
++   USER_CANCEL_EXCEPTION("ExpoBraintree:`UserCancelException"),
++   TOKENIZE_EXCEPTION("ExpoBraintree:`TokenizeException"),
+++  THREE_D_SECURE_EXCEPTION("ExpoBraintree:`ThreeDSecureException"),
++ }
++ 
++ enum class PAYPAL_EXCEPTION_TYPES(val value: String) {
++@@ -19,7 +20,8 @@ enum class ERROR_TYPES(val value: String) {
++   TOKENIZE_VAULT_PAYMENT_ERROR("TOKENIZE_VAULT_PAYMENT_ERROR"),
++   USER_CANCEL_TRANSACTION_ERROR("USER_CANCEL_TRANSACTION_ERROR"),
++   DATA_COLLECTOR_ERROR("DATA_COLLECTOR_ERROR"),
++-  CARD_TOKENIZATION_ERROR("CARD_TOKENIZATION_ERROR")
+++  CARD_TOKENIZATION_ERROR("CARD_TOKENIZATION_ERROR"),
+++  THREE_D_SECURE_VERIFICATION_ERROR("THREE_D_SECURE_VERIFICATION_ERROR"),
++ }
++ 
++ enum class PAYPAL_ERROR_TYPES(val value: String) {
++@@ -28,4 +30,4 @@ enum class PAYPAL_ERROR_TYPES(val value: String) {
++ 
++ enum class VENMO_ERROR_TYPES(val value: String) {
++   VENMO_DISABLED_IN_CONFIGURATION("VENMO_DISABLED_IN_CONFIGURATION_ERROR")
++-}
++\ No newline at end of file
+++}
++diff --git a/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt b/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt
++index 314ef38..648255f 100644
++--- a/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt
+++++ b/android/src/main/java/com/expobraintree/ExpoBraintreeModule.kt
++@@ -20,6 +20,11 @@ import com.braintreepayments.api.paypal.PayPalPaymentAuthResult
++ import com.braintreepayments.api.paypal.PayPalPendingRequest
++ import com.braintreepayments.api.paypal.PayPalResult
++ import com.braintreepayments.api.paypal.PayPalVaultRequest
+++import com.braintreepayments.api.threedsecure.ThreeDSecureClient
+++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthRequest
+++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthResult
+++import com.braintreepayments.api.threedsecure.ThreeDSecureRequest
+++import com.braintreepayments.api.threedsecure.ThreeDSecureResult
++ import com.braintreepayments.api.venmo.VenmoAccountNonce
++ import com.braintreepayments.api.venmo.VenmoClient
++ import com.braintreepayments.api.venmo.VenmoLauncher
++@@ -46,6 +51,8 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
++   private var reactContextRef: Context
++   private lateinit var payPalClientRef: PayPalClient
++   private lateinit var venmoClientRef: VenmoClient
+++  private lateinit var threeDSecureClientRef: ThreeDSecureClient
+++  private val threeDSecureFragmentTag = "ExpoBraintreeThreeDSecureFragment"
++ 
++   init {
++     this.reactContextRef = reactContext
++@@ -245,6 +252,54 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
++     }
++   }
++ 
+++  @ReactMethod
+++  fun requestThreeDSecureVerification(data: ReadableMap, localPromise: Promise) {
+++    try {
+++      promiseRef = localPromise
+++      currentActivityRef = getCurrentActivity() as FragmentActivity
+++
+++      val clientToken = data.getString("clientToken") ?: ""
+++      if (this::currentActivityRef.isInitialized && clientToken.isNotEmpty()) {
+++        threeDSecureClientRef = ThreeDSecureClient(currentActivityRef, clientToken)
+++        val threeDSecureRequest: ThreeDSecureRequest =
+++          ThreeDSecureDataConverter.createThreeDSecureRequest(data)
+++
+++        threeDSecureClientRef.createPaymentAuthRequest(
+++          currentActivityRef,
+++          threeDSecureRequest
+++        ) { paymentAuthRequest ->
+++          when (paymentAuthRequest) {
+++            is ThreeDSecurePaymentAuthRequest.ReadyToLaunch -> {
+++              currentActivityRef.runOnUiThread {
+++                val fragment = getThreeDSecureFragment()
+++                fragment.setCallback { paymentAuthResult ->
+++                  handleThreeDSecurePaymentAuthResult(paymentAuthResult, fragment)
+++                }
+++                fragment.launch(paymentAuthRequest)
+++              }
+++            }
+++
+++            is ThreeDSecurePaymentAuthRequest.LaunchNotRequired -> {
+++              moduleHandlers.onThreeDSecureSuccessHandler(paymentAuthRequest.nonce, promiseRef)
+++            }
+++
+++            is ThreeDSecurePaymentAuthRequest.Failure -> {
+++              moduleHandlers.onThreeDSecureFailure(paymentAuthRequest.error, promiseRef)
+++            }
+++          }
+++        }
+++      } else {
+++        throw Exception("Not Initialized")
+++      }
+++    } catch (ex: Exception) {
+++      localPromise.reject(
+++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value,
+++        ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.value,
+++        SharedDataConverter.createError(EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value, ex.message)
+++      )
+++    }
+++  }
+++
++   @ReactMethod
++   fun requestVenmoNonce(data: ReadableMap, localPromise: Promise) {
++     try {
++@@ -322,6 +377,39 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
++     }
++   }
++ 
+++  private fun handleThreeDSecurePaymentAuthResult(
+++    paymentAuthResult: ThreeDSecurePaymentAuthResult,
+++    fragment: ThreeDSecureFragment
+++  ) {
+++    when (paymentAuthResult) {
+++      is ThreeDSecurePaymentAuthResult.Failure -> {
+++        moduleHandlers.onThreeDSecureFailure(paymentAuthResult.error, promiseRef)
+++        fragment.clearCallback()
+++      }
+++
+++      ThreeDSecurePaymentAuthResult.NoResult -> {
+++        moduleHandlers.onCancel(Exception("No result"), promiseRef)
+++        fragment.clearCallback()
+++      }
+++
+++      is ThreeDSecurePaymentAuthResult.Success -> {
+++        threeDSecureClientRef.tokenize(paymentAuthResult) { threeDSecureResult ->
+++          when (threeDSecureResult) {
+++            is ThreeDSecureResult.Success ->
+++              moduleHandlers.onThreeDSecureSuccessHandler(threeDSecureResult.nonce, promiseRef)
+++
+++            is ThreeDSecureResult.Failure ->
+++              moduleHandlers.onThreeDSecureFailure(threeDSecureResult.error, promiseRef)
+++
+++            ThreeDSecureResult.Cancel ->
+++              moduleHandlers.onCancel(Exception("Cancel"), promiseRef)
+++          }
+++          fragment.clearCallback()
+++        }
+++      }
+++    }
+++  }
+++
++   private fun getPayPalPendingRequest(): PayPalPendingRequest.Started? {
++     currentActivityRef = getCurrentActivity() as FragmentActivity
++     return PendingRequestStore.getInstance().getPayPalPendingRequest(currentActivityRef)
++@@ -342,6 +430,19 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
++     PendingRequestStore.getInstance().clearVenmoPendingRequest(currentActivityRef)
++   }
++ 
+++  private fun getThreeDSecureFragment(): ThreeDSecureFragment {
+++    val fragmentManager = currentActivityRef.supportFragmentManager
+++    val existingFragment =
+++      fragmentManager.findFragmentByTag(threeDSecureFragmentTag) as? ThreeDSecureFragment
+++    if (existingFragment != null) {
+++      return existingFragment
+++    }
+++
+++    val fragment = ThreeDSecureFragment()
+++    fragmentManager.beginTransaction().add(fragment, threeDSecureFragmentTag).commitNow()
+++    return fragment
+++  }
+++
++   private fun handleReturnToApp(intent: Intent) {
++     // fetch stored pending requests
++     val payPalPendingRequest: PayPalPendingRequest.Started? = getPayPalPendingRequest()
++diff --git a/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt b/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt
++index 12fdf91..1c86c57 100644
++--- a/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt
+++++ b/android/src/main/java/com/expobraintree/ExpoBraintreeModuleHandlers.kt
++@@ -2,6 +2,7 @@ package com.expobraintree
++ 
++ import com.braintreepayments.api.card.CardNonce
++ import com.braintreepayments.api.core.UserCanceledException
+++import com.braintreepayments.api.core.PaymentMethodNonce
++ import com.braintreepayments.api.paypal.PayPalAccountNonce
++ import com.braintreepayments.api.venmo.VenmoAccountNonce
++ 
++@@ -85,4 +86,26 @@ class ExpoBraintreeModuleHandlers {
++     val result: WritableMap = PaypalDataConverter.createTokenizeCardDataNonce(cardNonce)
++     mPromise.resolve(result)
++   }
+++
+++  fun onThreeDSecureSuccessHandler(nonce: PaymentMethodNonce, mPromise: Promise) {
+++    val result: WritableMap = ThreeDSecureDataConverter.createThreeDSecureResult(nonce)
+++    mPromise.resolve(result)
+++  }
+++
+++  fun onThreeDSecureFailure(error: Exception, mPromise: Promise) {
+++    if (error is UserCanceledException) {
+++      mPromise.reject(EXCEPTION_TYPES.USER_CANCEL_EXCEPTION.value,
+++        ERROR_TYPES.USER_CANCEL_TRANSACTION_ERROR.value,
+++        SharedDataConverter.createError(
+++          EXCEPTION_TYPES.USER_CANCEL_EXCEPTION.value, error.message
+++        ))
+++      return
+++    }
+++
+++    mPromise.reject(EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value,
+++      ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.value,
+++      SharedDataConverter.createError(
+++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value, error.message
+++      ))
+++  }
++ }
++diff --git a/ios/ExpoBraintree.mm b/ios/ExpoBraintree.mm
++index 6d0e5bc..06f469d 100644
++--- a/ios/ExpoBraintree.mm
+++++ b/ios/ExpoBraintree.mm
++@@ -14,6 +14,10 @@ RCT_EXTERN_METHOD(tokenizeCardData:(NSDictionary*)options
++                  withResolver:(RCTPromiseResolveBlock)resolve
++                  withRejecter:(RCTPromiseRejectBlock)reject)
++ 
+++RCT_EXTERN_METHOD(requestThreeDSecureVerification:(NSDictionary*)options
+++                 withResolver:(RCTPromiseResolveBlock)resolve
+++                 withRejecter:(RCTPromiseRejectBlock)reject)
+++
++ RCT_EXTERN_METHOD(getDeviceDataFromDataCollector:(NSDictionary*)options
++                  withResolver:(RCTPromiseResolveBlock)resolve
++                  withRejecter:(RCTPromiseRejectBlock)reject)
++@@ -28,4 +32,3 @@ RCT_EXTERN_METHOD(requestVenmoNonce:(NSDictionary*)options
++ }
++ 
++ @end
++-
++diff --git a/ios/ExpoBraintree.swift b/ios/ExpoBraintree.swift
++index 232dbe2..64fb65f 100644
++--- a/ios/ExpoBraintree.swift
+++++ b/ios/ExpoBraintree.swift
++@@ -13,6 +13,7 @@ enum EXCEPTION_TYPES: String {
++   case SWIFT_EXCEPTION = "ReactNativeExpoBraintree:`SwiftException"
++   case USER_CANCEL_EXCEPTION = "ReactNativeExpoBraintree:`UserCancelException"
++   case TOKENIZE_EXCEPTION = "ReactNativeExpoBraintree:`TokenizeException"
+++  case THREE_D_SECURE_EXCEPTION = "ReactNativeExpoBraintree:`ThreeDSecureException"
++   case PAYPAL_DISABLED_IN_CONFIGURATION =
++     "ReactNativeExpoBraintree:`Paypal disabled in configuration"
++   case VENMO_DISABLED_IN_CONFIGURATION =
++@@ -27,10 +28,11 @@ enum ERROR_TYPES: String {
++   case VENMO_DISABLED_IN_CONFIGURATION_ERROR = "VENMO_DISABLED_IN_CONFIGURATION_ERROR"
++   case DATA_COLLECTOR_ERROR = "DATA_COLLECTOR_ERROR"
++   case CARD_TOKENIZATION_ERROR = "CARD_TOKENIZATION_ERROR"
+++  case THREE_D_SECURE_VERIFICATION_ERROR = "THREE_D_SECURE_VERIFICATION_ERROR"
++ }
++ 
++ @objc(ExpoBraintree)
++-class ExpoBraintree: NSObject {
+++class ExpoBraintree: NSObject, BTThreeDSecureRequestDelegate {
++ 
++   @objc(requestBillingAgreement:withResolver:withRejecter:)
++   func requestBillingAgreement(
++@@ -218,6 +220,44 @@ class ExpoBraintree: NSObject {
++     }
++   }
++ 
+++  @objc(requestThreeDSecureVerification:withResolver:withRejecter:)
+++  func requestThreeDSecureVerification(
+++    options: [String: Any], resolve: @escaping RCTPromiseResolveBlock,
+++    reject: @escaping RCTPromiseRejectBlock
+++  ) {
+++    let clientToken = options["clientToken"] as? String ?? ""
+++    let apiClientOptional = BTAPIClient(authorization: clientToken)
+++    guard let apiClient = apiClientOptional else {
+++      return reject(
+++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.rawValue,
+++        ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.rawValue,
+++        NSError(domain: ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.rawValue, code: -1))
+++    }
+++
+++    let threeDSecureClient = BTThreeDSecureClient(apiClient: apiClient)
+++    let threeDSecureRequest = prepareBTThreeDSecureRequest(options: options)
+++    threeDSecureRequest.threeDSecureRequestDelegate = self
+++
+++    threeDSecureClient.startPaymentFlow(threeDSecureRequest) { result, error in
+++      if let error = error {
+++        return reject(
+++          EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.rawValue,
+++          ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.rawValue,
+++          NSError(domain: error.localizedDescription, code: -1)
+++        )
+++      }
+++      if let result = result {
+++        return resolve(prepareBTThreeDSecureResult(result: result))
+++      }
+++
+++      return reject(
+++        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.rawValue,
+++        ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.rawValue,
+++        NSError(domain: ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.rawValue, code: -1)
+++      )
+++    }
+++  }
+++
++   @objc(requestVenmoNonce:withResolver:withRejecter:)
++   func requestVenmoNonce(
++     options: [String: String], resolve: @escaping RCTPromiseResolveBlock,
++@@ -280,4 +320,12 @@ class ExpoBraintree: NSObject {
++     }
++   }
++ 
+++  func onLookupComplete(
+++    _ request: BTThreeDSecureRequest,
+++    result: BTThreeDSecureResult,
+++    next: @escaping () -> Void
+++  ) {
+++    next()
+++  }
+++
++ }
++diff --git a/react-native-expo-braintree.podspec b/react-native-expo-braintree.podspec
++index 9eeae94..3194cf8 100644
++--- a/react-native-expo-braintree.podspec
+++++ b/react-native-expo-braintree.podspec
++@@ -17,6 +17,7 @@ Pod::Spec.new do |s|
++   s.source_files = "ios/**/*.{h,m,mm,swift}"
++   s.dependency "Braintree", "6.41.0"
++   s.dependency "Braintree/Venmo", "6.41.0"
+++  s.dependency "Braintree/ThreeDSecure", "6.41.0"
++ 
++   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.
++   # See https://github.com/facebook/react-native/blob/febf6b7f33fdb4904669f99d795eba4c0f95d7bf/scripts/cocoapods/new_architecture.rb#L79.
++diff --git a/src/index.tsx b/src/index.tsx
++index 4504743..a559259 100644
++--- a/src/index.tsx
+++++ b/src/index.tsx
++@@ -6,10 +6,13 @@ import type {
++   BTPayPalGetDeviceDataResult,
++   BTVenmoError,
++   BTVenmoNonceResult,
+++  BTThreeDSecureError,
+++  BTThreeDSecureResult,
++   RequestBillingAgreementOptions,
++   RequestOneTimePaymentOptions,
++   RequestVenmoNonceOptions,
++   TokenizeCardOptions,
+++  ThreeDSecureVerificationOptions,
++ } from './types';
++ 
++ const LINKING_ERROR =
++@@ -83,6 +86,18 @@ export async function tokenizeCardData(
++   }
++ }
++ 
+++export async function requestThreeDSecureVerification(
+++  options: ThreeDSecureVerificationOptions
+++): Promise<BTThreeDSecureResult | BTThreeDSecureError> {
+++  try {
+++    const result: BTThreeDSecureResult =
+++      await ExpoBraintree.requestThreeDSecureVerification(options);
+++    return result;
+++  } catch (ex: unknown) {
+++    return ex as BTThreeDSecureError;
+++  }
+++}
+++
++ export async function requestVenmoNonce(
++   options: RequestVenmoNonceOptions
++ ): Promise<BTVenmoNonceResult | BTVenmoError> {
++diff --git a/src/types.ts b/src/types.ts
++index 5f39c23..8a3aa1b 100644
++--- a/src/types.ts
+++++ b/src/types.ts
++@@ -2,6 +2,7 @@ export enum EXCEPTION_TYPES {
++   SWIFT_EXCEPTION = 'ExpoBraintree:`SwiftException',
++   USER_CANCEL_EXCEPTION = 'ExpoBraintree:`UserCancelException',
++   TOKENIZE_EXCEPTION = 'ExpoBraintree:`TokenizeException',
+++  THREE_D_SECURE_EXCEPTION = 'ExpoBraintree:`ThreeDSecureException',
++ }
++ 
++ export enum PAYPAL_EXCEPTION_TYPES {
++@@ -18,6 +19,7 @@ export enum ERROR_TYPES {
++   USER_CANCEL_TRANSACTION_ERROR = 'USER_CANCEL_TRANSACTION_ERROR',
++   DATA_COLLECTOR_ERROR = 'DATA_COLLECTOR_ERROR',
++   CARD_TOKENIZATION_ERROR = 'CARD_TOKENIZATION_ERROR',
+++  THREE_D_SECURE_VERIFICATION_ERROR = 'THREE_D_SECURE_VERIFICATION_ERROR',
++ }
++ 
++ export enum PAYPAL_ERROR_TYPES {
++@@ -84,6 +86,29 @@ export type TokenizeCardOptions = {
++   clientToken: string;
++ };
++ 
+++export type ThreeDSecurePostalAddress = {
+++  givenName?: string;
+++  surname?: string;
+++  phoneNumber?: string;
+++  streetAddress?: string;
+++  extendedAddress?: string;
+++  locality?: string;
+++  region?: string;
+++  postalCode?: string;
+++  countryCodeAlpha2?: string;
+++};
+++
+++export type ThreeDSecureVerificationOptions = {
+++  clientToken: string;
+++  nonce: string;
+++  amount: string;
+++  email?: string;
+++  mobilePhoneNumber?: string;
+++  challengeRequested?: BoolValue;
+++  billingAddress?: ThreeDSecurePostalAddress;
+++  shippingAddress?: ThreeDSecurePostalAddress;
+++};
+++
++ export type BTPayPalAccountNonceAddressResult = {
++   recipientName?: string;
++   streetAddress?: string;
++@@ -113,6 +138,18 @@ export type BTCardTokenizationNonceResult = {
++   expirationYear?: string;
++ };
++ 
+++export type BTThreeDSecureResult = {
+++  nonce: string;
+++  liabilityShifted?: boolean;
+++  liabilityShiftPossible?: boolean;
+++  status?: string;
+++  cardNetwork?: string;
+++  lastTwo?: string;
+++  lastFour?: string;
+++  expirationMonth?: string;
+++  expirationYear?: string;
+++};
+++
++ export type RequestVenmoNonceOptions = {
++   clientToken: string;
++   profileID?: string;
++@@ -156,3 +193,9 @@ export type BTVenmoError = {
++   message?: ERROR_TYPES | VENMO_ERROR_TYPES | string;
++   domain?: ERROR_TYPES | VENMO_ERROR_TYPES;
++ };
+++
+++export type BTThreeDSecureError = {
+++  code?: EXCEPTION_TYPES;
+++  message?: ERROR_TYPES | string;
+++  domain?: ERROR_TYPES;
+++};
++diff --git a/android/src/main/java/com/expobraintree/ThreeDSecureDataConverter.kt b/android/src/main/java/com/expobraintree/ThreeDSecureDataConverter.kt
++new file mode 100644
++index 0000000..124613a
++--- /dev/null
+++++ b/android/src/main/java/com/expobraintree/ThreeDSecureDataConverter.kt
++@@ -0,0 +1,94 @@
+++package com.expobraintree
+++
+++import com.braintreepayments.api.card.CardNonce
+++import com.braintreepayments.api.core.PaymentMethodNonce
+++import com.braintreepayments.api.threedsecure.ThreeDSecureAdditionalInformation
+++import com.braintreepayments.api.threedsecure.ThreeDSecurePostalAddress
+++import com.braintreepayments.api.threedsecure.ThreeDSecureRequest
+++import com.facebook.react.bridge.Arguments
+++import com.facebook.react.bridge.ReadableMap
+++import com.facebook.react.bridge.WritableMap
+++
+++class ThreeDSecureDataConverter {
+++  companion object {
+++    fun createThreeDSecureRequest(options: ReadableMap): ThreeDSecureRequest {
+++      val request = ThreeDSecureRequest()
+++      request.amount = options.getString("amount") ?: ""
+++      request.nonce = options.getString("nonce") ?: ""
+++
+++      if (options.hasKey("email")) request.email = options.getString("email")
+++      if (options.hasKey("mobilePhoneNumber")) {
+++        request.mobilePhoneNumber = options.getString("mobilePhoneNumber")
+++      }
+++
+++      if (options.hasKey("challengeRequested")) {
+++        val challengeRequested: String = options.getString("challengeRequested") ?: ""
+++        when (challengeRequested) {
+++          "true" -> request.challengeRequested = true
+++          "false" -> request.challengeRequested = false
+++        }
+++      }
+++
+++      if (options.hasKey("billingAddress")) {
+++        val billingAddress = options.getMap("billingAddress")
+++        if (billingAddress != null) {
+++          request.billingAddress = createThreeDSecurePostalAddress(billingAddress)
+++        }
+++      }
+++
+++      if (options.hasKey("shippingAddress")) {
+++        val shippingAddress = options.getMap("shippingAddress")
+++        if (shippingAddress != null) {
+++          val additionalInfo =
+++            request.additionalInformation ?: ThreeDSecureAdditionalInformation()
+++          additionalInfo.shippingAddress = createThreeDSecurePostalAddress(shippingAddress)
+++          request.additionalInformation = additionalInfo
+++        }
+++      }
+++
+++      return request
+++    }
+++
+++    private fun createThreeDSecurePostalAddress(address: ReadableMap): ThreeDSecurePostalAddress {
+++      val result = ThreeDSecurePostalAddress()
+++      if (address.hasKey("givenName")) result.givenName = address.getString("givenName")
+++      if (address.hasKey("surname")) result.surname = address.getString("surname")
+++      if (address.hasKey("phoneNumber")) result.phoneNumber = address.getString("phoneNumber")
+++      if (address.hasKey("streetAddress")) result.streetAddress = address.getString("streetAddress")
+++      if (address.hasKey("extendedAddress")) result.extendedAddress = address.getString("extendedAddress")
+++      if (address.hasKey("locality")) result.locality = address.getString("locality")
+++      if (address.hasKey("region")) result.region = address.getString("region")
+++      if (address.hasKey("postalCode")) result.postalCode = address.getString("postalCode")
+++      if (address.hasKey("countryCodeAlpha2")) {
+++        result.countryCodeAlpha2 = address.getString("countryCodeAlpha2")
+++      }
+++      return result
+++    }
+++
+++    fun createThreeDSecureResult(nonce: PaymentMethodNonce): WritableMap {
+++      val result: WritableMap = Arguments.createMap()
+++      result.putString("nonce", nonce.string)
+++
+++      if (nonce is CardNonce) {
+++        if (nonce.cardType == "Unknown") {
+++          result.putString("cardNetwork", "")
+++        } else {
+++          result.putString("cardNetwork", nonce.cardType)
+++        }
+++        result.putString("lastFour", nonce.lastFour)
+++        result.putString("lastTwo", nonce.lastTwo)
+++        result.putString("expirationMonth", nonce.expirationMonth)
+++        result.putString("expirationYear", nonce.expirationYear)
+++
+++        val threeDSecureInfo = nonce.threeDSecureInfo
+++        if (threeDSecureInfo != null) {
+++          result.putBoolean("liabilityShifted", threeDSecureInfo.liabilityShifted)
+++          result.putBoolean("liabilityShiftPossible", threeDSecureInfo.liabilityShiftPossible)
+++          result.putString("status", threeDSecureInfo.status.toString())
+++        }
+++      }
+++
+++      return result
+++    }
+++  }
+++}
++diff --git a/android/src/main/java/com/expobraintree/ThreeDSecureFragment.kt b/android/src/main/java/com/expobraintree/ThreeDSecureFragment.kt
++new file mode 100644
++index 0000000..5d09f40
++--- /dev/null
+++++ b/android/src/main/java/com/expobraintree/ThreeDSecureFragment.kt
++@@ -0,0 +1,25 @@
+++package com.expobraintree
+++
+++import androidx.fragment.app.Fragment
+++import com.braintreepayments.api.threedsecure.ThreeDSecureLauncher
+++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthRequest
+++import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthResult
+++
+++class ThreeDSecureFragment : Fragment() {
+++  private var callback: ((ThreeDSecurePaymentAuthResult) -> Unit)? = null
+++  private val launcher = ThreeDSecureLauncher(this) { paymentAuthResult ->
+++    callback?.invoke(paymentAuthResult)
+++  }
+++
+++  fun setCallback(callback: (ThreeDSecurePaymentAuthResult) -> Unit) {
+++    this.callback = callback
+++  }
+++
+++  fun clearCallback() {
+++    callback = null
+++  }
+++
+++  fun launch(request: ThreeDSecurePaymentAuthRequest.ReadyToLaunch) {
+++    launcher.launch(request)
+++  }
+++}
+diff --git a/ios/helpers/threeDSecure/BTThreeDSecure.swift b/ios/helpers/threeDSecure/BTThreeDSecure.swift
+new file mode 100644
+index 0000000..27d1c27
+--- /dev/null
++++ b/ios/helpers/threeDSecure/BTThreeDSecure.swift
+@@ -0,0 +1,69 @@
++//
++//  BTThreeDSecure.swift
++//  expo-braintree
++//
++//  Created by OpenAI on 28/01/2026.
++//
++import Braintree
++import Foundation
++
++func prepareBTThreeDSecurePostalAddress(options: [String: Any]) -> BTThreeDSecurePostalAddress {
++  let address = BTThreeDSecurePostalAddress()
++  address.givenName = options["givenName"] as? String
++  address.surname = options["surname"] as? String
++  address.phoneNumber = options["phoneNumber"] as? String
++  address.streetAddress = options["streetAddress"] as? String
++  address.extendedAddress = options["extendedAddress"] as? String
++  address.locality = options["locality"] as? String
++  address.region = options["region"] as? String
++  address.postalCode = options["postalCode"] as? String
++  address.countryCodeAlpha2 = options["countryCodeAlpha2"] as? String
++  return address
++}
++
++func prepareBTThreeDSecureRequest(options: [String: Any]) -> BTThreeDSecureRequest {
++  let request = BTThreeDSecureRequest()
++  if let amount = options["amount"] as? String {
++    request.amount = NSDecimalNumber(string: amount)
++  }
++  request.nonce = options["nonce"] as? String
++  request.email = options["email"] as? String
++  request.mobilePhoneNumber = options["mobilePhoneNumber"] as? String
++  if let challengeRequested = options["challengeRequested"] as? String {
++    request.challengeRequested = getBoolValueByString(
++      value: challengeRequested, defaultValue: false)
++  }
++  if let billingAddress = options["billingAddress"] as? [String: Any] {
++    request.billingAddress = prepareBTThreeDSecurePostalAddress(options: billingAddress)
++  } else if let billingAddress = options["billingAddress"] as? NSDictionary,
++    let billingAddressDict = billingAddress as? [String: Any]
++  {
++    request.billingAddress = prepareBTThreeDSecurePostalAddress(options: billingAddressDict)
++  }
++  if let shippingAddress = options["shippingAddress"] as? [String: Any] {
++    request.shippingAddress = prepareBTThreeDSecurePostalAddress(options: shippingAddress)
++  } else if let shippingAddress = options["shippingAddress"] as? NSDictionary,
++    let shippingAddressDict = shippingAddress as? [String: Any]
++  {
++    request.shippingAddress = prepareBTThreeDSecurePostalAddress(options: shippingAddressDict)
++  }
++  return request
++}
++
++func prepareBTThreeDSecureResult(result: BTThreeDSecureResult) -> NSDictionary {
++  let payload = NSMutableDictionary()
++  if let cardNonce = result.tokenizedCard {
++    payload["nonce"] = cardNonce.nonce
++    payload["cardNetwork"] = cardNonce.cardNetwork
++    payload["lastFour"] = cardNonce.lastFour
++    payload["lastTwo"] = cardNonce.lastTwo
++    payload["expirationMonth"] = cardNonce.expirationMonth
++    payload["expirationYear"] = cardNonce.expirationYear
++    if let threeDSecureInfo = cardNonce.threeDSecureInfo {
++      payload["liabilityShifted"] = threeDSecureInfo.liabilityShifted
++      payload["liabilityShiftPossible"] = threeDSecureInfo.liabilityShiftPossible
++      payload["status"] = String(describing: threeDSecureInfo.status)
++    }
++  }
++  return payload
++}

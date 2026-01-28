@@ -2,6 +2,7 @@ export enum EXCEPTION_TYPES {
   SWIFT_EXCEPTION = 'ExpoBraintree:`SwiftException',
   USER_CANCEL_EXCEPTION = 'ExpoBraintree:`UserCancelException',
   TOKENIZE_EXCEPTION = 'ExpoBraintree:`TokenizeException',
+  THREE_D_SECURE_EXCEPTION = 'ExpoBraintree:`ThreeDSecureException',
 }
 
 export enum PAYPAL_EXCEPTION_TYPES {
@@ -18,6 +19,7 @@ export enum ERROR_TYPES {
   USER_CANCEL_TRANSACTION_ERROR = 'USER_CANCEL_TRANSACTION_ERROR',
   DATA_COLLECTOR_ERROR = 'DATA_COLLECTOR_ERROR',
   CARD_TOKENIZATION_ERROR = 'CARD_TOKENIZATION_ERROR',
+  THREE_D_SECURE_VERIFICATION_ERROR = 'THREE_D_SECURE_VERIFICATION_ERROR',
 }
 
 export enum PAYPAL_ERROR_TYPES {
@@ -84,6 +86,29 @@ export type TokenizeCardOptions = {
   clientToken: string;
 };
 
+export type ThreeDSecurePostalAddress = {
+  givenName?: string;
+  surname?: string;
+  phoneNumber?: string;
+  streetAddress?: string;
+  extendedAddress?: string;
+  locality?: string;
+  region?: string;
+  postalCode?: string;
+  countryCodeAlpha2?: string;
+};
+
+export type ThreeDSecureVerificationOptions = {
+  clientToken: string;
+  nonce: string;
+  amount: string;
+  email?: string;
+  mobilePhoneNumber?: string;
+  challengeRequested?: BoolValue;
+  billingAddress?: ThreeDSecurePostalAddress;
+  shippingAddress?: ThreeDSecurePostalAddress;
+};
+
 export type BTPayPalAccountNonceAddressResult = {
   recipientName?: string;
   streetAddress?: string;
@@ -106,6 +131,18 @@ export type BTPayPalAccountNonceResult = {
 
 export type BTCardTokenizationNonceResult = {
   nonce: string;
+  cardNetwork?: string;
+  lastTwo?: string;
+  lastFour?: string;
+  expirationMonth?: string;
+  expirationYear?: string;
+};
+
+export type BTThreeDSecureResult = {
+  nonce: string;
+  liabilityShifted?: boolean;
+  liabilityShiftPossible?: boolean;
+  status?: string;
   cardNetwork?: string;
   lastTwo?: string;
   lastFour?: string;
@@ -155,4 +192,10 @@ export type BTVenmoError = {
   code?: EXCEPTION_TYPES | VENMO_EXCEPTION_TYPES;
   message?: ERROR_TYPES | VENMO_ERROR_TYPES | string;
   domain?: ERROR_TYPES | VENMO_ERROR_TYPES;
+};
+
+export type BTThreeDSecureError = {
+  code?: EXCEPTION_TYPES;
+  message?: ERROR_TYPES | string;
+  domain?: ERROR_TYPES;
 };

@@ -2,6 +2,7 @@ package com.expobraintree
 
 import com.braintreepayments.api.card.CardNonce
 import com.braintreepayments.api.core.UserCanceledException
+import com.braintreepayments.api.core.PaymentMethodNonce
 import com.braintreepayments.api.paypal.PayPalAccountNonce
 import com.braintreepayments.api.venmo.VenmoAccountNonce
 
@@ -84,5 +85,27 @@ class ExpoBraintreeModuleHandlers {
   fun onCardTokenizeSuccessHandler(cardNonce: CardNonce, mPromise: Promise) {
     val result: WritableMap = PaypalDataConverter.createTokenizeCardDataNonce(cardNonce)
     mPromise.resolve(result)
+  }
+
+  fun onThreeDSecureSuccessHandler(nonce: PaymentMethodNonce, mPromise: Promise) {
+    val result: WritableMap = ThreeDSecureDataConverter.createThreeDSecureResult(nonce)
+    mPromise.resolve(result)
+  }
+
+  fun onThreeDSecureFailure(error: Exception, mPromise: Promise) {
+    if (error is UserCanceledException) {
+      mPromise.reject(EXCEPTION_TYPES.USER_CANCEL_EXCEPTION.value,
+        ERROR_TYPES.USER_CANCEL_TRANSACTION_ERROR.value,
+        SharedDataConverter.createError(
+          EXCEPTION_TYPES.USER_CANCEL_EXCEPTION.value, error.message
+        ))
+      return
+    }
+
+    mPromise.reject(EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value,
+      ERROR_TYPES.THREE_D_SECURE_VERIFICATION_ERROR.value,
+      SharedDataConverter.createError(
+        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value, error.message
+      ))
   }
 }

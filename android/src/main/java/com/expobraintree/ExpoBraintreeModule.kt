@@ -20,6 +20,11 @@ import com.braintreepayments.api.paypal.PayPalPaymentAuthResult
 import com.braintreepayments.api.paypal.PayPalPendingRequest
 import com.braintreepayments.api.paypal.PayPalResult
 import com.braintreepayments.api.paypal.PayPalVaultRequest
+import com.braintreepayments.api.threedsecure.ThreeDSecureClient
+import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthRequest
+import com.braintreepayments.api.threedsecure.ThreeDSecurePaymentAuthResult
+import com.braintreepayments.api.threedsecure.ThreeDSecureRequest
+import com.braintreepayments.api.threedsecure.ThreeDSecureResult
 import com.braintreepayments.api.venmo.VenmoAccountNonce
 import com.braintreepayments.api.venmo.VenmoClient
 import com.braintreepayments.api.venmo.VenmoLauncher
@@ -46,6 +51,8 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
   private var reactContextRef: Context
   private lateinit var payPalClientRef: PayPalClient
   private lateinit var venmoClientRef: VenmoClient
+  private lateinit var threeDSecureClientRef: ThreeDSecureClient
+  private val threeDSecureFragmentTag = "ExpoBraintreeThreeDSecureFragment"
 
   init {
     this.reactContextRef = reactContext
@@ -246,6 +253,54 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
+  fun requestThreeDSecureVerification(data: ReadableMap, localPromise: Promise) {
+    try {
+      promiseRef = localPromise
+      currentActivityRef = getCurrentActivity() as FragmentActivity
+
+      val clientToken = data.getString("clientToken") ?: ""
+      if (this::currentActivityRef.isInitialized && clientToken.isNotEmpty()) {
+        threeDSecureClientRef = ThreeDSecureClient(currentActivityRef, clientToken)
+        val threeDSecureRequest: ThreeDSecureRequest =
+          ThreeDSecureDataConverter.createThreeDSecureRequest(data)
+
+        threeDSecureClientRef.createPaymentAuthRequest(
+          currentActivityRef,
+          threeDSecureRequest
+        ) { paymentAuthRequest ->
+          when (paymentAuthRequest) {
+            is ThreeDSecurePaymentAuthRequest.ReadyToLaunch -> {
+              currentActivityRef.runOnUiThread {
+                val fragment = getThreeDSecureFragment()
+                fragment.setCallback { paymentAuthResult ->
+                  handleThreeDSecurePaymentAuthResult(paymentAuthResult, fragment)
+                }
+                fragment.launch(paymentAuthRequest)
+              }
+            }
+
+            is ThreeDSecurePaymentAuthRequest.LaunchNotRequired -> {
+              moduleHandlers.onThreeDSecureSuccessHandler(paymentAuthRequest.nonce, promiseRef)
+            }
+
+            is ThreeDSecurePaymentAuthRequest.Failure -> {
+              moduleHandlers.onThreeDSecureFailure(paymentAuthRequest.error, promiseRef)
+            }
+          }
+        }
+      } else {
+        throw Exception("Not Initialized")
+      }
+    } catch (ex: Exception) {
+      localPromise.reject(
+        EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value,
+        ERROR_TYPES.API_CLIENT_INITIALIZATION_ERROR.value,
+        SharedDataConverter.createError(EXCEPTION_TYPES.THREE_D_SECURE_EXCEPTION.value, ex.message)
+      )
+    }
+  }
+
+  @ReactMethod
   fun requestVenmoNonce(data: ReadableMap, localPromise: Promise) {
     try {
       promiseRef = localPromise
@@ -322,6 +377,39 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun handleThreeDSecurePaymentAuthResult(
+    paymentAuthResult: ThreeDSecurePaymentAuthResult,
+    fragment: ThreeDSecureFragment
+  ) {
+    when (paymentAuthResult) {
+      is ThreeDSecurePaymentAuthResult.Failure -> {
+        moduleHandlers.onThreeDSecureFailure(paymentAuthResult.error, promiseRef)
+        fragment.clearCallback()
+      }
+
+      ThreeDSecurePaymentAuthResult.NoResult -> {
+        moduleHandlers.onCancel(Exception("No result"), promiseRef)
+        fragment.clearCallback()
+      }
+
+      is ThreeDSecurePaymentAuthResult.Success -> {
+        threeDSecureClientRef.tokenize(paymentAuthResult) { threeDSecureResult ->
+          when (threeDSecureResult) {
+            is ThreeDSecureResult.Success ->
+              moduleHandlers.onThreeDSecureSuccessHandler(threeDSecureResult.nonce, promiseRef)
+
+            is ThreeDSecureResult.Failure ->
+              moduleHandlers.onThreeDSecureFailure(threeDSecureResult.error, promiseRef)
+
+            ThreeDSecureResult.Cancel ->
+              moduleHandlers.onCancel(Exception("Cancel"), promiseRef)
+          }
+          fragment.clearCallback()
+        }
+      }
+    }
+  }
+
   private fun getPayPalPendingRequest(): PayPalPendingRequest.Started? {
     currentActivityRef = getCurrentActivity() as FragmentActivity
     return PendingRequestStore.getInstance().getPayPalPendingRequest(currentActivityRef)
@@ -340,6 +428,19 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
   private fun clearVenmoPendingRequest() {
     currentActivityRef = getCurrentActivity() as FragmentActivity
     PendingRequestStore.getInstance().clearVenmoPendingRequest(currentActivityRef)
+  }
+
+  private fun getThreeDSecureFragment(): ThreeDSecureFragment {
+    val fragmentManager = currentActivityRef.supportFragmentManager
+    val existingFragment =
+      fragmentManager.findFragmentByTag(threeDSecureFragmentTag) as? ThreeDSecureFragment
+    if (existingFragment != null) {
+      return existingFragment
+    }
+
+    val fragment = ThreeDSecureFragment()
+    fragmentManager.beginTransaction().add(fragment, threeDSecureFragmentTag).commitNow()
+    return fragment
   }
 
   private fun handleReturnToApp(intent: Intent) {
