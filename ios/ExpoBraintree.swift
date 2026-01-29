@@ -322,7 +322,7 @@ class ExpoBraintree: NSObject, BTThreeDSecureRequestDelegate {
 
   func onLookupComplete(
     _ request: BTThreeDSecureRequest,
-    result: BTThreeDSecureResult,
+    lookupResult result: BTThreeDSecureResult,
     next: @escaping () -> Void
   ) {
     next()
