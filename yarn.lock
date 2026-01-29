@@ -4368,6 +4368,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:^25.1.0":
+  version: 25.1.0
+  resolution: "@types/node@npm:25.1.0"
+  dependencies:
+    undici-types: ~7.16.0
+  checksum: 7e96871cd81bd12fa9e7da87bbeffcc0b9ffb8972dd4aadc59454430fc9e87a4e3dc63efc66fd1747c462431e46b706f68e8f98261d4e6056bf01c90165e5644
+  languageName: node
+  linkType: hard
+
 "@types/normalize-package-data@npm:^2.4.0":
   version: 2.4.4
   resolution: "@types/normalize-package-data@npm:2.4.4"
@@ -12555,6 +12564,7 @@ __metadata:
     "@react-native/eslint-config": ^0.79.6
     "@release-it/conventional-changelog": ^5.0.0
     "@types/jest": ^29.5.5
+    "@types/node": ^25.1.0
     "@types/react": ~19.0.10
     commitlint: ^20.2.0
     del-cli: ^7.0.0
@@ -12574,7 +12584,7 @@ __metadata:
     typescript: ~5.6.0
   peerDependencies:
     eol: "*"
-    expo: ">=53.0.0"
+    expo: ">=52.0.0"
     react: "*"
     react-native: "*"
   peerDependenciesMeta:
@@ -14573,6 +14583,13 @@ __metadata:
   version: 6.19.8
   resolution: "undici-types@npm:6.19.8"
   checksum: de51f1b447d22571cf155dfe14ff6d12c5bdaec237c765085b439c38ca8518fc360e88c70f99469162bf2e14188a7b0bcb06e1ed2dc031042b984b0bb9544017
+  languageName: node
+  linkType: hard
+
+"undici-types@npm:~7.16.0":
+  version: 7.16.0
+  resolution: "undici-types@npm:7.16.0"
+  checksum: 1ef68fc6c5bad200c8b6f17de8e5bc5cfdcadc164ba8d7208cd087cfa8583d922d8316a7fd76c9a658c22b4123d3ff847429185094484fbc65377d695c905857
   languageName: node
   linkType: hard
 
