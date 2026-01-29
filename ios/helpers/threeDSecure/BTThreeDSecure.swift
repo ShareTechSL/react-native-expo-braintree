@@ -40,13 +40,7 @@ func prepareBTThreeDSecureRequest(options: [String: Any]) -> BTThreeDSecureReque
   {
     request.billingAddress = prepareBTThreeDSecurePostalAddress(options: billingAddressDict)
   }
-  if let shippingAddress = options["shippingAddress"] as? [String: Any] {
-    request.shippingAddress = prepareBTThreeDSecurePostalAddress(options: shippingAddress)
-  } else if let shippingAddress = options["shippingAddress"] as? NSDictionary,
-    let shippingAddressDict = shippingAddress as? [String: Any]
-  {
-    request.shippingAddress = prepareBTThreeDSecurePostalAddress(options: shippingAddressDict)
-  }
+  // Note: shippingAddress was removed from BTThreeDSecureRequest in recent Braintree SDK versions
   return request
 }
 
@@ -59,11 +53,10 @@ func prepareBTThreeDSecureResult(result: BTThreeDSecureResult) -> NSDictionary {
     payload["lastTwo"] = cardNonce.lastTwo
     payload["expirationMonth"] = cardNonce.expirationMonth
     payload["expirationYear"] = cardNonce.expirationYear
-    if let threeDSecureInfo = cardNonce.threeDSecureInfo {
-      payload["liabilityShifted"] = threeDSecureInfo.liabilityShifted
-      payload["liabilityShiftPossible"] = threeDSecureInfo.liabilityShiftPossible
-      payload["status"] = String(describing: threeDSecureInfo.status)
-    }
+    let threeDSecureInfo = cardNonce.threeDSecureInfo
+    payload["liabilityShifted"] = threeDSecureInfo.liabilityShifted
+    payload["liabilityShiftPossible"] = threeDSecureInfo.liabilityShiftPossible
+    payload["status"] = String(describing: threeDSecureInfo.status)
   }
   return payload
 }
