@@ -381,32 +381,20 @@ class ExpoBraintreeModule(reactContext: ReactApplicationContext) :
     paymentAuthResult: ThreeDSecurePaymentAuthResult,
     fragment: ThreeDSecureFragment
   ) {
-    when (paymentAuthResult) {
-      is ThreeDSecurePaymentAuthResult.Failure -> {
-        moduleHandlers.onThreeDSecureFailure(paymentAuthResult.error, promiseRef)
-        fragment.clearCallback()
+    // In SDK 5.x, ThreeDSecurePaymentAuthResult is a data class, not a sealed class
+    // We pass it directly to tokenize() and handle results in the callback
+    threeDSecureClientRef.tokenize(paymentAuthResult) { threeDSecureResult ->
+      when (threeDSecureResult) {
+        is ThreeDSecureResult.Success ->
+          moduleHandlers.onThreeDSecureSuccessHandler(threeDSecureResult.nonce, promiseRef)
+
+        is ThreeDSecureResult.Failure ->
+          moduleHandlers.onThreeDSecureFailure(threeDSecureResult.error, promiseRef)
+
+        ThreeDSecureResult.Cancel ->
+          moduleHandlers.onCancel(Exception("Cancel"), promiseRef)
       }
-
-      ThreeDSecurePaymentAuthResult.NoResult -> {
-        moduleHandlers.onCancel(Exception("No result"), promiseRef)
-        fragment.clearCallback()
-      }
-
-      is ThreeDSecurePaymentAuthResult.Success -> {
-        threeDSecureClientRef.tokenize(paymentAuthResult) { threeDSecureResult ->
-          when (threeDSecureResult) {
-            is ThreeDSecureResult.Success ->
-              moduleHandlers.onThreeDSecureSuccessHandler(threeDSecureResult.nonce, promiseRef)
-
-            is ThreeDSecureResult.Failure ->
-              moduleHandlers.onThreeDSecureFailure(threeDSecureResult.error, promiseRef)
-
-            ThreeDSecureResult.Cancel ->
-              moduleHandlers.onCancel(Exception("Cancel"), promiseRef)
-          }
-          fragment.clearCallback()
-        }
-      }
+      fragment.clearCallback()
     }
   }
 

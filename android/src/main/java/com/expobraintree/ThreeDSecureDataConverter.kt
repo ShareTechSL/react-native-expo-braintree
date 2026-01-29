@@ -1,8 +1,8 @@
 package com.expobraintree
 
-import com.braintreepayments.api.card.CardNonce
 import com.braintreepayments.api.core.PaymentMethodNonce
 import com.braintreepayments.api.threedsecure.ThreeDSecureAdditionalInformation
+import com.braintreepayments.api.threedsecure.ThreeDSecureNonce
 import com.braintreepayments.api.threedsecure.ThreeDSecurePostalAddress
 import com.braintreepayments.api.threedsecure.ThreeDSecureRequest
 import com.facebook.react.bridge.Arguments
@@ -69,7 +69,8 @@ class ThreeDSecureDataConverter {
       val result: WritableMap = Arguments.createMap()
       result.putString("nonce", nonce.string)
 
-      if (nonce is CardNonce) {
+      // In SDK 5.x, the nonce from ThreeDSecureResult.Success is ThreeDSecureNonce
+      if (nonce is ThreeDSecureNonce) {
         if (nonce.cardType == "Unknown") {
           result.putString("cardNetwork", "")
         } else {
