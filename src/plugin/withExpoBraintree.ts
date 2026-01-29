@@ -3,9 +3,7 @@ import { withExpoBraintreeAndroid } from './withExpoBraintree.android';
 import {
   withExpoBraintreePlist,
   withVenmoScheme,
-  withExpoBraintreeAppDelegate,
-  withBraintreeWrapperFile,
-  type AppleLanguage,
+  withExpoBraintreeAppDelegateAndWrapper,
 } from './withExpoBraintree.ios';
 
 const pkg = require('react-native-expo-braintree/package.json');
@@ -15,12 +13,6 @@ export type ExpoBraintreePluginProps = {
    * xCode project name, used for importing the swift expo braintree config header
    */
   xCodeProjectAppName?: string;
-
-  /**
-   * Indicator that tell the plugin if you still use AppDelegate Objective C
-   * Optional Default = "swift"
-   */
-  appDelegateLanguage?: AppleLanguage;
 
   /**
    * Android AppLink host
@@ -40,11 +32,8 @@ export const withExpoBraintreePlugin: ConfigPlugin<ExpoBraintreePluginProps> = (
   // Android mods
   let config = withExpoBraintreeAndroid(expoConfig, props);
 
-  // IOS mods
-  config = withExpoBraintreeAppDelegate(config, props);
-  config = withBraintreeWrapperFile(config, {
-    appDelegateLanguage: props?.appDelegateLanguage || 'swift',
-  });
+  // IOS mods - AppDelegate and wrapper file use auto-detected language
+  config = withExpoBraintreeAppDelegateAndWrapper(config, props);
   config = withExpoBraintreePlist(config);
   config = withVenmoScheme(config);
 

@@ -219,9 +219,8 @@ export const modifyAppDelegateObjectiveC = (
 export const withExpoBraintreeAppDelegate: ConfigPlugin<
   ExpoBraintreePluginProps
 > = (expoConfig, { xCodeProjectAppName }) => {
-  let appDelegateLanguage: AppleLanguage | null = null;
   return withAppDelegate(expoConfig, (config) => {
-    appDelegateLanguage = config.modResults.language;
+    const appDelegateLanguage = config.modResults.language;
     switch (appDelegateLanguage) {
       case 'objc':
       case 'objcpp':
@@ -243,6 +242,49 @@ export const withExpoBraintreeAppDelegate: ConfigPlugin<
         return config;
     }
   });
+};
+
+/**
+ * Combined plugin that modifies AppDelegate and adds wrapper file
+ * Uses objcpp by default (Expo SDK 52+ uses AppDelegate.mm)
+ */
+export const withExpoBraintreeAppDelegateAndWrapper: ConfigPlugin<
+  ExpoBraintreePluginProps
+> = (expoConfig, { xCodeProjectAppName }) => {
+  let detectedLanguage: AppleLanguage = 'objcpp'; // Default for Expo SDK 52+
+
+  // First, modify AppDelegate and detect language
+  let config = withAppDelegate(expoConfig, (appDelegateConfig) => {
+    detectedLanguage = appDelegateConfig.modResults.language;
+    switch (detectedLanguage) {
+      case 'objc':
+      case 'objcpp':
+        const resultObjectiVeC = modifyAppDelegateObjectiveC(
+          appDelegateConfig,
+          xCodeProjectAppName
+        );
+        appDelegateConfig.modResults.contents = resultObjectiVeC.join('\n');
+        break;
+      case 'swift':
+        const resultSwift = modifyAppDelegateSwift(appDelegateConfig);
+        appDelegateConfig.modResults.contents = resultSwift.join('\n');
+        break;
+      default:
+        WarningAggregator.addWarningIOS(
+          'withExpoBraintree',
+          `${detectedLanguage} AppDelegate file is not supported yet`
+        );
+    }
+    return appDelegateConfig;
+  });
+
+  // Add wrapper file - language detection happens in withAppDelegate first
+  // due to mod execution order, so detectedLanguage will be correct
+  config = withBraintreeWrapperFile(config, {
+    appDelegateLanguage: detectedLanguage,
+  });
+
+  return config;
 };
 
 // Add a new wrapper Swift file to the Xcode project for Swift compatibility.
